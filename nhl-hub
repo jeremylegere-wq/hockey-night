@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Hockey Night launcher: starts the local data server, opens Firefox in kiosk mode, stops the server on exit.
+DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+[ -f "$DIR/.env" ] && { set -a; . "$DIR/.env"; set +a; }
+PORT="${NHL_HUB_PORT:-$(python3 -c "import json;print(json.load(open('$DIR/config.json')).get('port',8765))" 2>/dev/null || echo 8765)}"
+URL="http://127.0.0.1:$PORT/"
+EXTRA=""; [ "$1" = "--demo" ] && EXTRA="--demo"
+mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+python3 "$DIR/server.py" --port "$PORT" $EXTRA >"${XDG_CACHE_HOME:-$HOME/.cache}/nhl-hub.log" 2>&1 &
+SRV=$!
+trap 'kill $SRV 2>/dev/null' EXIT
+for i in $(seq 1 50); do curl -fs "$URL" >/dev/null 2>&1 && break; sleep 0.2; done
+if [ -d "$HOME/snap/firefox" ]; then PROF="$HOME/snap/firefox/common/nhl-hub-profile"; else PROF="${XDG_DATA_HOME:-$HOME/.local/share}/nhl-hub/profile"; fi; mkdir -p "$PROF"
+if command -v firefox >/dev/null; then firefox --new-instance --no-remote --profile "$PROF" --kiosk "$URL"
+else xdg-open "$URL"; wait $SRV; fi

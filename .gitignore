@@ -1,0 +1,24 @@
+# Secrets / local config
+.env
+.env.*
+!.env.example
+config.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Logs, caches, OS and editor files
+*.log
+.cache/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local test output and build artefacts
+shots/
+*.zip
+dist/
