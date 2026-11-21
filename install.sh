@@ -3,8 +3,10 @@ set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 DEST="$HOME/.local/share/nhl-hub-app"
 mkdir -p "$DEST" "$HOME/.local/bin" "$HOME/.local/share/applications"
-cp -r "$DIR/VERSION" "$DIR/server.py" "$DIR/demo.py" "$DIR/web" "$DIR/nhl-hub" "$DIR/icon.png" "$DIR/icon.svg" "$DEST/"
+cp -r "$DIR/VERSION" "$DIR/server.py" "$DIR/demo.py" "$DIR/web" "$DIR/nhl-hub" "$DIR/icon.png" "$DIR/icon.svg" "$DIR/prospect_notes.example.json" "$DEST/"
 [ -f "$DEST/config.json" ] || cp "$DIR/config.json" "$DEST/config.json"
+[ -f "$DEST/prospect_notes.json" ] || cp "$DIR/prospect_notes.example.json" "$DEST/prospect_notes.json"
+cp "$DIR/prospect_rankings.json" "$DEST/prospect_rankings.json"
 chmod +x "$DEST/nhl-hub"
 ln -sf "$DEST/nhl-hub" "$HOME/.local/bin/nhl-hub"
 

@@ -17,9 +17,9 @@ const fmtD = (iso, o) => { try { return new Date(iso).toLocaleDateString([], o |
 const get = async u => { const r = await fetch(u, { cache: "no-store" }); if (!r.ok) throw new Error(u + " " + r.status); return r.json(); };
 
 const S = { cfg: { favourite: "MTL", scene_seconds: {} }, scores: null, stand: null, club: null, detail: {}, scenes: [], idx: -1,
-  paused: false, prev: {}, tx: null, cycle: 0, t0: 0, dur: 20, prevScore: {}, vids: [], vidIdx: 0, curId: null };
+  paused: false, prev: {}, tx: null, cycle: 0, t0: 0, dur: 20, prevScore: {}, curId: null, muted: false, soundBlocked: false, team: null, prospects: null };
 const fav = () => (S.cfg.favourite || "").toUpperCase();
-const secs = k => (S.cfg.scene_seconds || {})[k] || { boxscore: 22, favourite_boxscore: 34, division: 14, wildcard: 16, leaders: 16, preview: 18, transactions: 18 }[k];
+const secs = k => (S.cfg.scene_seconds || {})[k] || { boxscore: 22, favourite_boxscore: 34, division: 14, wildcard: 16, leaders: 16, preview: 18, transactions: 18, team: 24, prospects: 16 }[k];
 
 /* ---------- helpers ---------- */
 function lg(abbr, url, s) {
@@ -57,14 +57,17 @@ function buildScenes() {
   });
   const st = [{ type: "division", label: "DIVISIONS", secs: secs("division") }, { type: "wildcard", label: "WILD CARD", secs: secs("wildcard") }];
   const out = []; let si = 0;
-  boxes.forEach((b, i) => { out.push(b); if (i % 2 === 1 && S.stand) out.push(st[si++ % 2]); });
+  const gameDay = S.team && allGames().some(g => g._date === (S.scores && S.scores.current) && (g.away.abbrev === fav() || g.home.abbrev === fav()));
+  const teamScene = gameDay ? { type: "team", label: fav() + " GAME DAY", secs: secs("team") } : null;
+  boxes.forEach((b, i) => { out.push(b); if (i === 0 && teamScene) out.push(teamScene); if (i % 2 === 1 && S.stand) out.push(st[si++ % 2]); });
+  if (!boxes.length && teamScene) out.push(teamScene);
   while (S.stand && si < 2) out.push(st[si++]);
   featureScenes().forEach(f => out.push(f));
   if (!out.length) out.push(st[0]);
   return out;
 }
 /* one "feature" per cycle: leaders (rotating), game previews on cycle 2, transactions on cycle 5 */
-const FEATURES = ["leaders:points", "previews", "leaders:goals", "leaders:goalies", "transactions", "leaders:assists", "leaders:plusMinus"];
+const FEATURES = ["leaders:points", "previews", "prospects", "leaders:goals", "leaders:goalies", "transactions", "prospects", "leaders:assists", "leaders:plusMinus"];
 function featureScenes() {
   const f = FEATURES[S.cycle % FEATURES.length];
   if (f === "previews") {
@@ -73,15 +76,19 @@ function featureScenes() {
     const pool = gs.filter(g => days.includes(g._date)).sort((a, b) => ((b.away.abbrev === fav() || b.home.abbrev === fav()) - (a.away.abbrev === fav() || a.home.abbrev === fav())) || String(a.start).localeCompare(String(b.start))).slice(0, 5);
     if (pool.length) return pool.map(g => ({ type: "preview", id: g.id, label: "PREVIEW " + g.away.abbrev + "@" + g.home.abbrev, secs: (g.away.abbrev === fav() || g.home.abbrev === fav()) ? secs("preview") + 8 : secs("preview") }));
   }
+  if (f === "prospects") {
+    const n = S.prospects && S.prospects.items ? S.prospects.items.length : 0, per = 6, pages = Math.ceil(n / per);
+    if (pages) return Array.from({ length: Math.min(pages, 3) }, (_, i) => ({ type: "prospects", page: i, pages: Math.min(pages, 3), label: "PROSPECTS " + (i + 1) + "/" + Math.min(pages, 3), secs: secs("prospects") }));
+  }
   if (f === "transactions" && S.tx && S.tx.items && S.tx.items.length) return [{ type: "transactions", label: "TRANSACTIONS", secs: secs("transactions") }];
   if (!S.leaders) return [];
   const kind = f.startsWith("leaders:") ? f.split(":")[1] : "points";
   return [{ type: "leaders", kind, label: "LEADERS", secs: secs("leaders") }];
 }
 function refreshScenes() {
-  const curKey = S.scenes[S.idx] && (S.scenes[S.idx].id || S.scenes[S.idx].type + (S.scenes[S.idx].kind || ""));
+  const curKey = S.scenes[S.idx] && (S.scenes[S.idx].id || S.scenes[S.idx].type + (S.scenes[S.idx].kind || "") + (S.scenes[S.idx].page ?? ""));
   S.scenes = buildScenes();
-  const ni = S.scenes.findIndex(s => (s.id || s.type + (s.kind || "")) === curKey);
+  const ni = S.scenes.findIndex(s => (s.id || s.type + (s.kind || "") + (s.page ?? "")) === curKey);
   if (ni >= 0) S.idx = ni;
   renderTabs();
 }
@@ -250,6 +257,44 @@ function transactionsHTML() {
   return `<div class="stand-title"><span>LEAGUE</span><em>TRANSACTIONS</em><small>TRADES · SIGNINGS · WAIVERS · INJURED RESERVE</small></div><div class="grid2"><div class="st">${items.slice(0, half).map(row).join("")}</div><div class="st">${items.slice(half).map(row).join("")}</div></div>`;
 }
 
+/* ---------- favourite team game day ---------- */
+const RFMT = { pct: P.pct, f2: P.f2, f1: P.f1, pdo: P.pdo, pp: P.pp };
+function rankClass(r, of) { const q = r / of; return q <= 0.25 ? "top" : q <= 0.5 ? "up" : q <= 0.75 ? "mid" : "low"; }
+const ord = n => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+function teamHTML() {
+  const T = S.team, st = T.standing || {}, g = allGames().find(g => g._date === S.scores.current && (g.away.abbrev === fav() || g.home.abbrev === fav()));
+  const opp = g ? (g.away.abbrev === fav() ? g.home : g.away) : null, home = g && g.home.abbrev === fav();
+  const status = g ? (LIVE(g.state) ? statusText(g) + " · " + (g.away.abbrev + " " + (g.away.score ?? 0) + "-" + (g.home.score ?? 0) + " " + g.home.abbrev) : FINAL(g.state) ? statusText(g) + " · " + g.away.abbrev + " " + g.away.score + "-" + g.home.score + " " + g.home.abbrev : "TODAY " + fmtT(g.start)) : "";
+  let h = `<div class="th" style="${col(T.abbrev)}">${lg(T.abbrev, T.logo, 96)}<div class="nm"><small>GAME DAY</small><b>${esc((T.name || T.abbrev).toUpperCase())}</b></div>` +
+    `<div class="rec"><b>${st.w ?? "-"}-${st.l ?? "-"}-${st.otl ?? "-"}</b><small>${st.pts ?? "-"} PTS · ${esc(st.div || "")} #${st.divSeq ?? "-"} · ${ord(st.leagueSeq || 0)} OVERALL</small></div>` +
+    `<div class="gm2">${opp ? `${home ? "VS" : "AT"} ${lg(opp.abbrev, opp.logo, 54)}<b>${esc(opp.abbrev)}</b>` : ""}<small>${esc(status)}</small></div></div>`;
+  h += `<div class="tb">`;
+  h += `<div class="st tbox"><div class="st-head">TEAM · LEAGUE RANK</div>` + (T.ranks || []).map(r => `<div class="rk2 ${rankClass(r.rank, r.of)}"><span class="l">${esc(r.label)}</span><span class="v">${RFMT[r.fmt](r.value)}</span><span class="bar"><i style="width:${Math.max(6, 100 * (r.of + 1 - r.rank) / r.of)}%"></i></span><span class="r">${ord(r.rank)}</span></div>`).join("") + `</div>`;
+  h += `<div class="st tbox"><div class="st-head">GOALTENDING</div>` + (T.goalies || []).map((q, i) => `<div class="gcard"><div class="gn"><span>${i ? "BACKUP" : "STARTER"}</span><b>${esc(q.name)}</b></div>` +
+    `<div class="gs"><div><em>RECORD</em>${q.w}-${q.l}-${q.otl}</div><div><em>GAA</em>${P.f2(q.gaa)}</div><div><em>SV%</em>${q.svp != null ? Number(q.svp).toFixed(3).replace(/^0/, "") : "–"}</div><div><em>SA</em>${q.sa ?? "–"}</div><div><em>SO</em>${q.so ?? 0}</div></div></div>`).join("") + `</div>`;
+  h += `<div class="st tbox"><div class="st-head">SKATERS</div><div class="sk h"><span></span><span>PLAYER</span><span>GP</span><span>G</span><span>A</span><span>P</span><span>+/-</span><span>S</span><span>TOI</span></div>` +
+    (T.skaters || []).slice(0, 12).map(p => `<div class="sk"><span class="dim">${esc(p.pos || "")}</span><span class="nm">${esc(p.name)}</span><span>${p.gp}</span><span class="${p.g ? "hotn" : ""}">${p.g}</span><span>${p.a}</span><span class="hotp2">${p.p}</span><span class="dim">${p.pm > 0 ? "+" + p.pm : p.pm}</span><span>${p.sog}</span><span class="dim">${esc(p.toi)}</span></div>`).join("") + `</div></div>`;
+  return h;
+}
+
+/* ---------- prospect watch ---------- */
+const ageOf = b => b ? Math.floor((Date.now() - new Date(b).getTime()) / 31557600000) : "";
+const inch = v => v ? Math.floor(v / 12) + "'" + (v % 12) + '"' : "";
+function prospectsHTML(sc) {
+  const all = (S.prospects && S.prospects.items) || [], per = 6, items = all.slice(sc.page * per, sc.page * per + per);
+  const card = p => {
+    const s = p.stats, isG = p.pos === "G", ini = p.name.split(" ").map(x => x[0]).join("").slice(0, 2);
+    return `<div class="pc${p.rank ? " ranked" : ""}"><div class="pc-top"><span class="ph">${p.headshot ? `<img src="${esc(p.headshot)}" alt="" onerror="this.remove()">` : ""}<b>${esc(ini)}</b></span>` +
+      `<div class="pi"><b>${esc(p.name)}</b><i>${esc(p.pos || "")}${p.shoots ? " · " + esc(p.shoots) : ""} · ${ageOf(p.born)} · ${inch(p.ht)} ${p.wt ? p.wt + " lb" : ""}</i><i>${esc(p.draft ? "DRAFTED " + p.draft : "UNDRAFTED")}${p.country ? " · " + esc(p.country) : ""}</i></div>` +
+      (p.rank ? `<span class="rank">#${p.rank}${p.grade ? `<small>${esc(p.grade)}</small>` : ""}</span>` : "") + `</div>` +
+      `<div class="pl2">${esc(p.league || "")}${p.team ? " · " + esc(p.team) : ""}</div>` +
+      (s ? (isG ? `<div class="ps"><div><em>GP</em>${s.gp}</div><div><em>W</em>${s.w ?? "–"}</div><div><em>GAA</em>${s.gaa != null ? Number(s.gaa).toFixed(2) : "–"}</div><div><em>SV%</em>${s.svp != null ? Number(s.svp).toFixed(3).replace(/^0/, "") : "–"}</div></div>`
+        : `<div class="ps"><div><em>GP</em>${s.gp}</div><div><em>G</em>${s.g}</div><div><em>A</em>${s.a}</div><div><em>P</em><b>${s.p}</b></div><div><em>P/GP</em>${s.gp ? (s.p / s.gp).toFixed(2) : "–"}</div></div>`) : `<div class="ps none2">No current-season stats</div>`) +
+      ((p.chips || []).length ? `<div class="rks">${p.chips.map(c => `<span class="${c.scope}">${esc(c.src)} <b>${c.scope === "league" ? "TOP 50 #" : "#"}${c.rank}</b></span>`).join("")}</div>` : "") + (p.note ? `<div class="pn">${esc(p.note)}</div>` : "") + `</div>`;
+  };
+  return `<div class="stand-title"><span>PROSPECT</span><em>WATCH</em><small>${esc((S.team && S.team.name || fav()).toUpperCase())} · PAGE ${sc.page + 1} OF ${sc.pages}${(S.prospects && S.prospects.sources || []).length ? " · RANKS: " + S.prospects.sources.map(x => esc(x.id)).join(" · ") : ""}</small></div><div class="pgrid2">${items.map(card).join("")}</div>`;
+}
+
 /* ---------- scene engine ---------- */
 async function ensurePreview(id) {
   if (S.prev[id] && Date.now() - S.prev[id].at < 600000) return;
@@ -265,7 +310,7 @@ function sceneHTML(sc) {
   if (sc.type === "preview") { const e = S.prev[sc.id]; return e ? previewHTML(findGame(sc.id), e) : `<div class="err">LOADING PREVIEW…</div>`; }
   if (sc.type === "box") { const g = findGame(sc.id); if (!g) return `<div class="err">Game not found</div>`; const e = S.detail[sc.id]; return boxHTML(g, e && e.d); }
   if (!S.stand) return `<div class="err">Standings unavailable<small>Waiting for data from the NHL…</small></div>`;
-  return { division: divisionHTML, wildcard: wildcardHTML, leaders: leadersHTML, transactions: transactionsHTML }[sc.type](sc);
+  return { division: divisionHTML, wildcard: wildcardHTML, leaders: leadersHTML, transactions: transactionsHTML, team: teamHTML, prospects: prospectsHTML }[sc.type](sc);
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const GAP = 3;   // extra seconds on every scene to cover the transition
@@ -413,12 +458,15 @@ async function playReel(gi, ci) {
   let info = null; try { info = await get("/api/clip/" + x.clip); } catch (e) { }
   if (my !== REEL.token) return;
   if (info && info.mp4) {
-    render(`<video id="reel-vid" src="${esc(info.mp4)}" ${info.poster ? `poster="${esc(info.poster)}"` : ""} autoplay muted playsinline></video>`);
+    render(`<video id="reel-vid" src="${esc(info.mp4)}" ${info.poster ? `poster="${esc(info.poster)}"` : ""} playsinline></video>`);
     const v = $("#reel-vid"), seg = () => $("#seg" + ci);
     v.addEventListener("timeupdate", () => { if (v.duration && seg()) seg().style.width = (100 * v.currentTime / v.duration) + "%"; });
     v.addEventListener("ended", () => { if (my === REEL.token) nextReel(); });
     v.addEventListener("error", () => { if (my === REEL.token) nextReel(); });
-    v.play().catch(() => {});
+    v.muted = S.muted;
+    const pr = v.play();   // with sound if allowed; if the browser blocks it, fall back to muted and wait for a click
+    if (pr) pr.catch(() => { if (!S.muted) { v.muted = true; S.soundBlocked = true; applySound(); v.play().catch(() => {}); } });
+    applySound();
     REEL.timer = setTimeout(() => { if (my === REEL.token) nextReel(); }, 60000);   // safety net
   } else {   // could not resolve: fall back to the NHL's own embedded player for this clip, timed
     const t = S.cfg.goal_player_url || "https://players.brightcove.net/6415718365001/EXtG1xJ7H_default/index.html?videoId={id}&autoplay=true&muted=true";
@@ -426,19 +474,17 @@ async function playReel(gi, ci) {
     REEL.timer = setTimeout(() => { if (my === REEL.token) nextReel(); }, (S.cfg.reel_seconds || 24) * 1000);
   }
 }
-async function initVideo() {
-  let src = S.cfg.video_sources || [];
-  try { const v = await get("/api/videos"); if (v.embed) src = [{ name: `NHL · LAST ${v.hours}H (${v.videos.length})`, url: v.embed, trusted: true }, ...src]; } catch (e) { console.warn(e); }
-  S.vids = await Promise.all(src.map(async s => { if (s.trusted) return { ...s, ok: true }; try { const r = await get("/api/embed?url=" + encodeURIComponent(s.url)); return { ...s, ok: r.embeddable, why: r.reason }; } catch (e) { return { ...s, ok: false, why: "probe failed" }; } }));
-  const first = S.vids.findIndex(v => v.ok); S.vidIdx = first >= 0 ? first : 0; showVideo();
+/* ---------- sound ---------- */
+try { S.muted = localStorage.getItem("nhlhub.muted") === "1"; } catch (e) { }
+function applySound() {
+  const v = $("#reel-vid"); if (v) v.muted = S.muted;
+  const b = $("#mute-btn"); if (b) { b.textContent = S.muted ? "MUTED" : (S.soundBlocked ? "CLICK FOR SOUND" : "SOUND ON"); b.classList.toggle("off", S.muted || S.soundBlocked); }
 }
-function showVideo() {
-  const v = S.vids[S.vidIdx], box = $("#video-box");
-  if (!v) { box.innerHTML = `<div class="novid"><b>NO VIDEO SOURCE</b>Add one to config.json</div>`; return; }
-  $("#video-name").textContent = v.name.toUpperCase();
-  $("#video-hint").textContent = S.vids.length > 1 ? "V = NEXT SOURCE" : "";
-  if (!v.ok) { box.innerHTML = `<div class="novid"><b>${esc(v.name)}</b>blocks embedding (${esc(v.why)})<br>press V for the next source</div>`; return; }
-  box.innerHTML = `<iframe src="${esc(v.url)}" allow="autoplay; encrypted-media; fullscreen" referrerpolicy="no-referrer-when-downgrade"></iframe>`;
+function setMuted(m) {
+  S.muted = m; S.soundBlocked = false;
+  try { localStorage.setItem("nhlhub.muted", m ? "1" : "0"); } catch (e) { }
+  applySound(); const v = $("#reel-vid"); if (v && !m) v.play().catch(() => { v.muted = true; S.soundBlocked = true; applySound(); });
+  toast(m ? "SOUND OFF" : "SOUND ON", 1200);
 }
 
 /* ---------- polling ---------- */
@@ -464,10 +510,12 @@ async function pollScores() {
     else redraw();
   } catch (e) { console.warn(e); if (!S.scenes.length) $("#scene").innerHTML = `<div class="err">Can't reach the NHL feed<small>${esc(e.message)} — retrying…</small></div>`; }
 }
-async function pollLeaders() { try { S.leaders = await get("/api/leaders"); } catch (e) { console.warn(e); } try { S.tx = await get("/api/transactions"); } catch (e) { console.warn(e); } refreshScenes(); }
+async function pollLeaders() { try { S.leaders = await get("/api/leaders"); } catch (e) { console.warn(e); } try { S.tx = await get("/api/transactions"); } catch (e) { console.warn(e); } try { S.prospects = await get("/api/prospects/" + fav()); } catch (e) { console.warn(e); } refreshScenes(); }
 async function pollNews() { try { S.news = await get("/api/news"); buildNews(); } catch (e) { console.warn(e); } }
 async function pollSlow() {
   try { S.stand = await get("/api/standings"); } catch (e) { console.warn(e); }
+  try { S.club = await get("/api/club/" + fav()); renderClub(); } catch (e) { console.warn(e); }
+  try { S.team = await get("/api/team/" + fav()); } catch (e) { console.warn(e); }
   refreshScenes();
 }
 
@@ -475,12 +523,16 @@ async function pollSlow() {
 function fit() { const s = Math.min(innerWidth / 1920, innerHeight / 1080); $("#stage").style.transform = `translate(-50%,-50%) scale(${s})`; }
 function clock() { const d = new Date(); $("#clock").innerHTML = `${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}<small>${d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }).toUpperCase()}</small>`; }
 let idleT; function wake() { document.body.classList.remove("idle"); clearTimeout(idleT); idleT = setTimeout(() => document.body.classList.add("idle"), 3000); }
+document.addEventListener("click", e => {
+  if (e.target.id === "mute-btn") { if (S.soundBlocked && !S.muted) { S.soundBlocked = false; const v = $("#reel-vid"); if (v) { v.muted = false; v.play().catch(() => {}); } applySound(); } else setMuted(!S.muted); }
+  else if (S.soundBlocked && !S.muted) { S.soundBlocked = false; const v = $("#reel-vid"); if (v) { v.muted = false; v.play().catch(() => {}); } applySound(); }
+});
 addEventListener("resize", fit); addEventListener("mousemove", wake);
 addEventListener("keydown", e => {
   if (e.key === "ArrowRight") show(S.idx + 1);
   else if (e.key === "ArrowLeft") show(S.idx - 1);
   else if (e.key === " ") { e.preventDefault(); S.paused = !S.paused; toast(S.paused ? "PAUSED" : "RESUMED", 1500); }
-  else if (/^v$/i.test(e.key)) { S.vidIdx = (S.vidIdx + 1) % Math.max(1, S.vids.length); showVideo(); }
+  else if (/^m$/i.test(e.key)) setMuted(!S.muted);
   else if (/^r$/i.test(e.key)) { toast("REFRESHING…", 1500); pollScores(); pollSlow(); }
   else if (/^f$/i.test(e.key)) { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); }
 });
@@ -488,10 +540,11 @@ addEventListener("keydown", e => {
 (async function main() {
   fit(); clock(); wake(); setInterval(clock, 15000);
   try { S.cfg = await get("/api/config"); } catch (e) { }
+  try { if (localStorage.getItem("nhlhub.muted") === null) S.muted = !!S.cfg.reel_muted; } catch (e) { }
+  applySound();
   $("#demo-flag").textContent = (S.cfg.demo ? "DEMO DATA · " : "") + (S.cfg.version ? "v" + S.cfg.version : "");
   requestAnimationFrame(t => { lastT = t; tick(t); tkLoop(t); });
   await pollSlow(); await pollScores();
-  initVideo();
   pollNews(); setInterval(pollNews, 600000); pollLeaders(); setInterval(pollLeaders, 300000); setInterval(pollScores, 15000); setInterval(pollSlow, 120000);
   const q = new URLSearchParams(location.search);   // debug: ?scene=N&pause=1
   if (q.has("scene")) { await show(+q.get("scene"), true); }

@@ -1,0 +1,17 @@
+{
+  "_about": "Public prospect rankings, matched to NHL prospects by name. Edit when outlets publish new lists. 'list' sources are Canadiens-only orders (best first); 'league' sources give each player's overall league rank.",
+  "sources": [
+    {"id": "NHL", "name": "NHL.com (Adam Kimelman)", "date": "2026-08-15", "scope": "list",
+     "url": "https://www.nhl.com/news/topic/32-in-32/montreal-canadiens-top-prospects-for-2026-27-season-32-in-32",
+     "ranks": ["David Reinbacher", "Michael Hage", "Jacob Fowler", "Gleb Pugachyov", "Alexander Zharovsky"]},
+    {"id": "THN", "name": "The Hockey News (Karine Hains)", "date": "2026-08-19", "scope": "list",
+     "url": "https://thehockeynews.com/nhl/montreal-canadiens/latest-news/the-canadiens-top-five-prospects",
+     "ranks": ["Michael Hage", "Jacob Fowler", "Alexander Zharovsky", "David Reinbacher", "Gleb Pugachyov"]},
+    {"id": "THW", "name": "The Hockey Writers (William Bourget)", "date": "2026-07-22", "scope": "list",
+     "url": "https://thehockeywriters.com/montreal-canadiens-top-10-prospects-2026-offseason-edition/",
+     "ranks": ["Michael Hage", "Alexander Zharovsky", "Jacob Fowler", "Gleb Pugachyov", "David Reinbacher", "Adam Engstrom", "LJ Mooney", "Bryce Pickford", "Owen Beck", "Timofei Runtso"]},
+    {"id": "TSN", "name": "TSN (Craig Button) Top 50 league-wide", "date": "2026-03-13", "scope": "league",
+     "url": "https://www.tsn.ca/nhl/article/iginla-no-1-habs-among-nhl-leaders-in-buttons-top-50-prospects-ranking/",
+     "ranks": {"Michael Hage": 6, "Alexander Zharovsky": 20, "David Reinbacher": 28, "Bryce Pickford": 38}}
+  ]
+}

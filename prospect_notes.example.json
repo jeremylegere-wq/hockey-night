@@ -1,0 +1,5 @@
+{
+  "_how_to": "Optional. Key = the player's NHL id (shown in the URL of their nhl.com player page). rank = your own ordering, grade = your own letter grade, note = one line shown on the card. Delete this line and the examples.",
+  "8484000": { "rank": 1, "grade": "A", "note": "Example: elite skater, watch his shot volume." },
+  "8484001": { "rank": 2, "grade": "B+", "note": "Example: two-way centre, needs another year in junior." }
+}

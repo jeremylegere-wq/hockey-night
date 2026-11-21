@@ -180,8 +180,6 @@ def leaders():
             "goalies": {"wins": _rows([6, 6, 5, 5, 5, 4, 4, 4], rnd), "savePctg": _rows([.945, .938, .932, .929, .925, .921, .918, .915], rnd),
                         "goalsAgainstAverage": _rows([1.62, 1.75, 1.88, 1.93, 2.01, 2.08, 2.1, 2.15], rnd)}, "updated": time.time()}
 
-def videos():
-    return {"videos": [], "embed": None, "hours": 24}
 
 
 def preview(gid):
@@ -210,3 +208,36 @@ def transactions():
     for i, (a, t, k) in enumerate(items):
         rows.append({"date": "2026-10-%02d" % (19 - i // 4), "abbrev": a, "team": NAMES[a], "logo": logo(a), "text": t, "kind": k})
     return {"items": rows, "updated": time.time()}
+
+
+def team_profile(abbr):
+    import random
+    rnd = random.Random(11)
+    last = ["Caufield", "Suzuki", "Slafkovsky", "Hutson", "Demidov", "Dach", "Newhook", "Guhle", "Matheson", "Evans", "Anderson", "Laine", "Xhekaj", "Kapanen"]
+    sk = []
+    for i, n in enumerate(last):
+        g, a = rnd.randint(0, 6), rnd.randint(0, 7)
+        sk.append({"id": 100 + i, "name": "%s. %s" % (chr(65 + i), n), "pos": "C" if i % 3 == 0 else "R" if i % 3 == 1 else "D", "gp": 9, "g": g, "a": a, "p": g + a, "pm": rnd.randint(-3, 5),
+                   "sog": rnd.randint(8, 34), "pim": rnd.choice([0, 2, 4]), "ppg": rnd.randint(0, 2), "toi": "%d:%02d" % (rnd.randint(13, 22), rnd.randint(0, 59)), "headshot": ""})
+    sk.sort(key=lambda x: -x["p"])
+    ranks = [{"label": l, "value": v, "fmt": f, "rank": rnd.randint(1, 32), "of": 32} for l, v, f in
+             [("POINTS %", .611, "pp"), ("GOALS FOR / GP", 3.22, "f2"), ("GOALS AGAINST / GP", 2.89, "f2"), ("POWER PLAY", .214, "pct"), ("PENALTY KILL", .812, "pct"),
+              ("SHOTS FOR / GP", 29.4, "f1"), ("SHOTS AGAINST / GP", 28.1, "f1"), ("FACEOFF %", .512, "pct"), ("SHOT ATTEMPTS % 5v5", .503, "pct"), ("PDO 5v5", 1.012, "pdo")]]
+    return {"abbrev": abbr, "name": NAMES.get(abbr, abbr), "logo": logo(abbr), "standing": {"gp": 9, "w": 5, "l": 3, "otl": 1, "pts": 11, "div": "Atlantic", "divSeq": 3, "confSeq": 6, "leagueSeq": 12, "streak": "W2", "l10": "5-3-1", "gf": 29, "ga": 26, "diff": 3},
+            "ranks": ranks, "skaters": sk[:14],
+            "goalies": [{"id": 1, "name": "S. Montembeault", "gp": 6, "gs": 6, "w": 4, "l": 2, "otl": 0, "gaa": 2.61, "svp": .912, "sa": 168, "so": 1}, {"id": 2, "name": "J. Dobes", "gp": 3, "gs": 3, "w": 1, "l": 1, "otl": 1, "gaa": 3.02, "svp": .901, "sa": 88, "so": 0}], "updated": time.time()}
+
+def prospects(abbr):
+    import random
+    rnd = random.Random(5)
+    nm = ["Demo Winger", "Demo Centre", "Demo Defender", "Demo Goalie", "Demo Sniper", "Demo Playmaker", "Demo Enforcer", "Demo Rookie", "Demo Shutdown", "Demo Skater", "Demo Prospect", "Demo Passer"]
+    lg = [("OHL", "London Knights"), ("QMJHL", "Moncton Wildcats"), ("NCAA", "Boston University"), ("AHL", "Laval Rocket"), ("SHL", "Djurgarden"), ("WHL", "Seattle Thunderbirds")]
+    items = []
+    for i, n in enumerate(nm):
+        l, t = lg[i % len(lg)]
+        g, a = rnd.randint(0, 9), rnd.randint(0, 12)
+        items.append({"id": 500 + i, "name": n, "pos": "G" if i == 3 else rnd.choice(["C", "LW", "RW", "D"]), "shoots": "L", "ht": 70 + i % 6, "wt": 175 + i * 3, "born": "2006-0%d-1%d" % (1 + i % 9, i % 9), "country": "CAN",
+                      "headshot": "", "draft": "202%d R%d #%d" % (3 + i % 3, 1 + i // 4, 5 + i * 11), "overall": 5 + i * 11, "team": t, "league": l,
+                      "stats": {"season": 20262027, "gp": 9, "g": g, "a": a, "p": g + a, "gaa": 2.4 if i == 3 else None, "svp": .921 if i == 3 else None, "w": 5 if i == 3 else None},
+                      "rank": (i + 1) if i < 5 else None, "note": "Demo note: strong 200-ft game, watch the shot volume." if i < 5 else "", "grade": "A-" if i < 3 else ""})
+    return {"abbrev": abbr, "items": items, "updated": time.time()}

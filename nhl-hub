@@ -11,5 +11,12 @@ SRV=$!
 trap 'kill $SRV 2>/dev/null' EXIT
 for i in $(seq 1 50); do curl -fs "$URL" >/dev/null 2>&1 && break; sleep 0.2; done
 if [ -d "$HOME/snap/firefox" ]; then PROF="$HOME/snap/firefox/common/nhl-hub-profile"; else PROF="${XDG_DATA_HOME:-$HOME/.local/share}/nhl-hub/profile"; fi; mkdir -p "$PROF"
+# let the goal reels play with sound inside the kiosk window (mute/unmute with M or the button)
+cat > "$PROF/user.js" <<'UJ'
+user_pref("media.autoplay.default", 0);
+user_pref("media.autoplay.blocking_policy", 0);
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.aboutwelcome.enabled", false);
+UJ
 if command -v firefox >/dev/null; then firefox --new-instance --no-remote --profile "$PROF" --kiosk "$URL"
 else xdg-open "$URL"; wait $SRV; fi

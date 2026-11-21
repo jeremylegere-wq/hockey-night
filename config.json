@@ -1,11 +1,15 @@
 {
   "favourite": "MTL",
   "port": 8765,
-  "scene_seconds": { "boxscore": 22, "favourite_boxscore": 34, "division": 14, "wildcard": 16, "conference": 14, "leaders": 16 },
-  "video_max_age_hours": 24,
-  "video_channels": [ { "name": "NHL", "id": "UCqFMzb-4AUf6WAIbl132QKA" } ],
+  "scene_seconds": {
+    "boxscore": 22,
+    "favourite_boxscore": 34,
+    "division": 14,
+    "wildcard": 16,
+    "leaders": 16,
+    "team": 24,
+    "prospects": 16
+  },
   "reel_seconds": 24,
-  "video_sources": [
-    { "name": "NHL.com Video", "url": "https://www.nhl.com/video/" }
-  ]
+  "reel_muted": false
 }
