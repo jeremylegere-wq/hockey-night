@@ -2,6 +2,7 @@
 """NHL Hub local server: serves the full-screen app and proxies/normalises NHL data.
 Standard library only.   python3 server.py [--port 8765] [--demo]"""
 import argparse, json, mimetypes, os, sys, threading, time, urllib.error, urllib.parse, urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -320,35 +321,6 @@ def leaders():
         return out
     return cached("leaders", 300, build)
 
-def videos():
-    """Latest uploads from YouTube channel RSS feeds (no API key), limited to the last 24 hours."""
-    def build():
-        import xml.etree.ElementTree as ET, datetime
-        A, Y = "{http://www.w3.org/2005/Atom}", "{http://www.youtube.com/xml/schemas/2015}"
-        chans = CONFIG.get("video_channels") or [{"name": "NHL", "id": "UCqFMzb-4AUf6WAIbl132QKA"}]
-        hours = CONFIG.get("video_max_age_hours", 24)
-        vids = []
-        for ch in chans:
-            try:
-                root = ET.fromstring(fetch("https://www.youtube.com/feeds/videos.xml?channel_id=" + ch["id"], 10).strip())
-            except Exception as e:
-                print("video feed failed:", ch.get("name"), e, file=sys.stderr)
-                continue
-            for en in root.iter(A + "entry"):
-                vid, pub, ti = en.find(Y + "videoId"), en.find(A + "published"), en.find(A + "title")
-                if vid is None or pub is None:
-                    continue
-                ts = datetime.datetime.fromisoformat(pub.text.strip().replace("Z", "+00:00")).timestamp()
-                if time.time() - ts <= hours * 3600:
-                    vids.append({"id": vid.text, "title": ti.text if ti is not None else "", "channel": ch.get("name", ""), "ts": ts})
-        vids.sort(key=lambda v: -v["ts"])
-        vids = vids[:15]
-        embed = None
-        if vids:
-            embed = "https://www.youtube.com/embed/%s?playlist=%s&autoplay=1&mute=1&loop=1&rel=0" % (vids[0]["id"], ",".join(v["id"] for v in vids[1:]) or vids[0]["id"])
-        return {"videos": vids, "embed": embed, "hours": hours}
-    return cached("videos", 600, build)
-
 BC_ACCT = "6415718365001"
 
 def clip(cid):
@@ -454,6 +426,124 @@ def preview(gid):
                 "state": L.get("gameState"), "away": sides["away"], "home": sides["home"]}
     return cached("preview:%s" % gid, 600, build)
 
+# (label, key in NHL team stats, lower is better, format)
+RANK_METRICS = [("POINTS %", "pointPct", False, "pp"), ("GOALS FOR / GP", "goalsForPerGame", False, "f2"), ("GOALS AGAINST / GP", "goalsAgainstPerGame", True, "f2"),
+                ("POWER PLAY", "powerPlayPct", False, "pct"), ("PENALTY KILL", "penaltyKillPct", False, "pct"), ("SHOTS FOR / GP", "shotsForPerGame", False, "f1"),
+                ("SHOTS AGAINST / GP", "shotsAgainstPerGame", True, "f1"), ("FACEOFF %", "faceoffWinPct", False, "pct"),
+                ("SHOT ATTEMPTS % 5v5", "satPct", False, "pct"), ("PDO 5v5", "shootingPlusSavePct5v5", False, "pdo")]
+
+def _toi(sec):
+    m, s = divmod(int(sec or 0), 60)
+    return "%d:%02d" % (m, s)
+
+def team_profile(abbr):
+    """Season stats, goalie stats, skater stats and league rankings for one club (used for the favourite team's game day)."""
+    abbr = (abbr or "").upper()
+    def build():
+        me = next((t for t in standings()["teams"] if t["abbrev"] == abbr), {})
+        cs = get_json("/club-stats/%s/now" % abbr)
+        rows = list(team_stats().values())
+        mine = next((v for v in rows if me.get("name") and v.get("name", "").endswith(me["name"])), {})
+        ranks = []
+        for label, key, low, fmt in RANK_METRICS:
+            vals = [v[key] for v in rows if v.get(key) is not None]
+            val = mine.get(key)
+            if val is None or len(vals) < 2:
+                continue
+            ranks.append({"label": label, "value": val, "fmt": fmt, "rank": 1 + sum(1 for x in vals if (x < val if low else x > val)), "of": len(vals)})
+        sk = []
+        for p in cs.get("skaters", []):
+            sk.append({"id": p.get("playerId"), "name": "%s. %s" % (d(p.get("firstName"))[:1], d(p.get("lastName"))), "pos": p.get("positionCode"), "gp": p.get("gamesPlayed"),
+                       "g": p.get("goals"), "a": p.get("assists"), "p": p.get("points"), "pm": p.get("plusMinus"), "sog": p.get("shots"), "pim": p.get("penaltyMinutes"),
+                       "ppg": p.get("powerPlayGoals"), "toi": _toi(p.get("avgTimeOnIcePerGame")), "headshot": p.get("headshot")})
+        sk.sort(key=lambda x: (-(x["p"] or 0), -(x["g"] or 0)))
+        gl = []
+        for g in cs.get("goalies", []):
+            gl.append({"id": g.get("playerId"), "name": "%s. %s" % (d(g.get("firstName"))[:1], d(g.get("lastName"))), "gp": g.get("gamesPlayed"), "gs": g.get("gamesStarted"),
+                       "w": g.get("wins"), "l": g.get("losses"), "otl": g.get("overtimeLosses"), "gaa": g.get("goalsAgainstAverage"), "svp": g.get("savePercentage"),
+                       "sa": g.get("shotsAgainst"), "so": g.get("shutouts"), "headshot": g.get("headshot")})
+        gl.sort(key=lambda x: -(x["gp"] or 0))
+        return {"abbrev": abbr, "name": me.get("name"), "logo": me.get("logo"), "standing": {k: me.get(k) for k in ("gp", "w", "l", "otl", "pts", "div", "divSeq", "confSeq", "leagueSeq", "streak", "l10", "gf", "ga", "diff")},
+                "ranks": ranks, "skaters": sk[:14], "goalies": gl[:2], "updated": time.time()}
+    return cached("team:" + abbr, 900, build)
+
+def _prospect_notes():
+    try:
+        return json.load(open(os.path.join(HERE, "prospect_notes.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+def _norm(n):
+    import unicodedata
+    n = unicodedata.normalize("NFKD", n or "").encode("ascii", "ignore").decode().lower()
+    return "".join(c for c in n if c.isalnum() or c == " ").strip()
+
+def _rankings():
+    """Public third-party ranking (names in order) kept in prospect_rankings.json - edit it when a new list is published."""
+    try:
+        return json.load(open(os.path.join(HERE, "prospect_rankings.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+def prospects(abbr):
+    """Club prospect pool from the NHL's own prospects endpoint, with current-season numbers from each player's page.
+    Optional personal notes/ratings come from prospect_notes.json (keyed by NHL player id)."""
+    abbr = (abbr or "").upper()
+    def one(p):
+        pid = p.get("id")
+        info = {"id": pid, "name": ("%s %s" % (d(p.get("firstName")), d(p.get("lastName")))).strip(), "pos": p.get("positionCode"), "shoots": p.get("shootsCatches"),
+                "ht": p.get("heightInInches"), "wt": p.get("weightInPounds"), "born": p.get("birthDate"), "country": p.get("birthCountry"), "headshot": p.get("headshot"),
+                "draft": "", "overall": 999, "team": "", "league": "", "stats": None}
+        try:
+            L = cached("pl:%s" % pid, 6 * 3600, lambda: get_json("/player/%s/landing" % pid))
+            dd = L.get("draftDetails") or {}
+            if dd:
+                info["draft"] = "%s R%s #%s" % (dd.get("year"), dd.get("round"), dd.get("overallPick"))
+                info["overall"] = dd.get("overallPick") or 999
+            tot = [t for t in L.get("seasonTotals", []) if t.get("gameTypeId", 2) == 2]
+            if tot:
+                latest = max(t.get("season", 0) for t in tot)
+                cur = [t for t in tot if t.get("season") == latest]
+                t = cur[-1]
+                info["team"], info["league"] = d(t.get("teamName")), t.get("leagueAbbrev", "")
+                info["stats"] = {"season": latest, "gp": sum(x.get("gamesPlayed", 0) or 0 for x in cur), "g": sum(x.get("goals", 0) or 0 for x in cur),
+                                 "a": sum(x.get("assists", 0) or 0 for x in cur), "p": sum(x.get("points", 0) or 0 for x in cur),
+                                 "gaa": t.get("goalsAgainstAvg"), "svp": t.get("savePctg"), "w": t.get("wins")}
+        except Exception as e:
+            print("prospect failed:", pid, e, file=sys.stderr)
+        return info
+    def build():
+        raw = get_json("/prospects/%s" % abbr)
+        plist = [p for grp in ("forwards", "defensemen", "goalies") for p in raw.get(grp, [])][:30]
+        with ThreadPoolExecutor(6) as ex:
+            items = list(ex.map(one, plist))
+        notes = _prospect_notes()
+        rk = _rankings()
+        srcs = rk.get("sources") or []
+        for it in items:
+            n = notes.get(str(it["id"])) or {}
+            key, chips, nums = _norm(it.get("name")), [], []
+            for sc in srcs:
+                rr = sc.get("ranks") or {}
+                if isinstance(rr, list):
+                    pos = {_norm(x): i + 1 for i, x in enumerate(rr)}.get(key)
+                    if pos:
+                        chips.append({"src": sc["id"], "rank": pos, "scope": "list"})
+                        nums.append(pos)
+                else:
+                    pos = {_norm(k): v for k, v in rr.items()}.get(key)
+                    if pos:
+                        chips.append({"src": sc["id"], "rank": pos, "scope": "league"})
+            it["chips"] = chips
+            it["avg"] = sum(nums) / len(nums) if nums else None
+            it["rank"], it["note"], it["grade"] = n.get("rank"), n.get("note", ""), n.get("grade", "")
+        # consensus order: personal rank first, otherwise average of the published Canadiens lists
+        for pos, it in enumerate(sorted([i for i in items if i["rank"] or i["avg"] is not None], key=lambda x: (x["rank"] or x["avg"], x["avg"] or 99)), 1):
+            it["rank"] = it["rank"] or pos
+        items.sort(key=lambda x: (x["rank"] is None, x["rank"] or 0, x["overall"], -((x["stats"] or {}).get("p") or 0)))
+        return {"abbrev": abbr, "items": items, "sources": [{k: x.get(k) for k in ("id", "name", "date", "scope")} for x in srcs], "updated": time.time()}
+    return cached("prospects:" + abbr, 3 * 3600, build)
+
 ESPN_ABBR = {"NJ": "NJD", "TB": "TBL", "SJ": "SJS", "LA": "LAK", "UTAH": "UTA", "WAS": "WSH", "LV": "VGK"}
 
 def transactions():
@@ -473,36 +563,6 @@ def transactions():
         rows.sort(key=lambda r: r["date"], reverse=True)
         return {"items": rows[:40], "updated": time.time()}
     return cached("transactions", 900, build)
-
-def embeddable(url):
-    """Best-effort check of whether a site allows itself to be shown in an iframe."""
-    def probe():
-        if url.startswith("/"):
-            return {"url": url, "embeddable": True, "reason": "same origin"}
-        # only probe hosts you configured (stops this local endpoint being used to fetch arbitrary URLs)
-        host = urllib.parse.urlparse(url).hostname or ""
-        allowed = {urllib.parse.urlparse(v.get("url", "")).hostname for v in CONFIG.get("video_sources", [])} | {"www.youtube.com"}
-        if urllib.parse.urlparse(url).scheme != "https" or host not in allowed:
-            return {"url": url, "embeddable": False, "reason": "host not in config.json video_sources"}
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA["User-Agent"], "Accept": "text/html"})
-            with urllib.request.urlopen(req, timeout=10) as r:
-                xfo = (r.headers.get("X-Frame-Options") or "").lower()
-                csp = (r.headers.get("Content-Security-Policy") or "").lower()
-        except urllib.error.HTTPError as e:
-            xfo, csp = (e.headers.get("X-Frame-Options") or "").lower(), (e.headers.get("Content-Security-Policy") or "").lower()
-            if e.code >= 400 and not (xfo or csp):
-                return {"url": url, "embeddable": False, "reason": "HTTP %d" % e.code}
-        except Exception as e:
-            return {"url": url, "embeddable": False, "reason": str(e)[:80]}
-        if xfo in ("deny", "sameorigin") or xfo.startswith("allow-from"):
-            return {"url": url, "embeddable": False, "reason": "X-Frame-Options: " + xfo}
-        if "frame-ancestors" in csp:
-            part = csp.split("frame-ancestors", 1)[1].split(";", 1)[0]
-            if "*" not in part and "localhost" not in part and "http:" not in part:
-                return {"url": url, "embeddable": False, "reason": "CSP frame-ancestors" + part}
-        return {"url": url, "embeddable": True, "reason": "no framing block found"}
-    return cached("embed:" + url, 6 * 3600, probe)
 
 # ---------------------------------------------------------------- HTTP
 CONFIG = json.load(open(os.path.join(HERE, "config.json")))
@@ -556,9 +616,6 @@ class H(BaseHTTPRequestHandler):
         src = DemoData if DEMO else sys.modules[__name__]
         if p == "/api/config":
             cfg = dict(CONFIG)
-            if DEMO:
-                cfg["video_sources"] = [{"name": "DEMO CLIP", "url": "/demo-video.html"}]
-                pass
             cfg["demo"] = DEMO
             cfg["version"] = VERSION
             return self.send(200, cfg)
@@ -572,8 +629,6 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, src.club(p.rsplit("/", 1)[1].upper()))
         if p == "/api/leaders":
             return self.send(200, src.leaders())
-        if p == "/api/videos":
-            return self.send(200, src.videos())
         if p.startswith("/api/clip/"):
             if DEMO:
                 demo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "demo-clip.webm")
@@ -581,13 +636,14 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, clip(p.rsplit("/", 1)[1]))
         if p.startswith("/api/preview/"):
             return self.send(200, src.preview(p.rsplit("/", 1)[1]))
+        if p.startswith("/api/team/"):
+            return self.send(200, src.team_profile(p.rsplit("/", 1)[1]))
+        if p.startswith("/api/prospects/"):
+            return self.send(200, src.prospects(p.rsplit("/", 1)[1]))
         if p == "/api/transactions":
             return self.send(200, src.transactions())
         if p == "/api/news":
             return self.send(200, src.news())
-        if p == "/api/embed":
-            url = (q.get("url") or [""])[0]
-            return self.send(200, embeddable(url))
         return self.send(404, {"error": "unknown endpoint"})
 
 if __name__ == "__main__":

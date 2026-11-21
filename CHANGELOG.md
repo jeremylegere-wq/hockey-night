@@ -6,8 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ## [Unreleased]
 ### Added
+- Prospect Watch shows rankings from NHL.com, The Hockey News, The Hockey Writers and TSN (Button Top 50) as chips, plus a consensus order (`prospect_rankings.json`, edit when new lists publish); personal `prospect_notes.json` overrides
 ### Changed
 ### Fixed
+
+## [1.1.0-beta] - 2026-10-24
+### Added
+- Goal reels now have sound; mute with `M` or the button (choice remembered); launcher enables kiosk autoplay-with-sound
+- Favourite-team game-day screen (league ranks, goalies, skaters)
+- Prospect Watch screens (NHL prospects data, optional personal ranks via `prospect_notes.json`)
+### Removed
+- YouTube video panel, `/api/videos`, `/api/embed`, `V` key, `video_*` config keys
 
 ## [1.0.0-beta] - 2026-10-20
 First release prepared for GitHub (builds v8.1 plus repo hardening).
@@ -67,5 +76,5 @@ First release prepared for GitHub (builds v8.1 plus repo hardening).
 ### Added
 - Initial dashboard: box scores, standings, scores ticker, video panel, demo mode
 
-[Unreleased]: https://github.com/<you>/hockey-night/compare/v1.0.0-beta...HEAD
-[1.0.0-beta]: https://github.com/<you>/hockey-night/releases/tag/v1.0.0-beta
+[Unreleased]: https://github.com/jeremylegere-wq/hockey-night/compare/v1.0.0-beta...HEAD
+[1.0.0-beta]: https://github.com/jeremylegere-wq/hockey-night/releases/tag/v1.0.0-beta

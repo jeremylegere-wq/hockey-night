@@ -13,7 +13,9 @@ scrolling ticker for news, goals and scores, plus a video panel and story-style 
 - Game previews (cycle 2): team and advanced stats, projected lines, goalie matchup
 - League transactions (cycle 5)
 - Three tickers: news (with summaries), goals, and scores plus upcoming games
-- Video panel (NHL YouTube, last 24 hours) and goal reels (NHL highlight clips, game by game)
+- Goal reels at the top right (NHL highlight clips) with sound; mute with `M` or the SOUND button
+- Favourite-team game-day screen (team stats, goalies, skaters, league ranks) on days your team plays
+- Prospect Watch (NHL official prospects list + current-season stats; your own ranks/notes via `prospect_notes.json`)
 - Goal alerts, keyboard controls, 1920x1080 stage that scales to any 16:9 screen
 - `--demo` mode with built-in sample data (no internet needed)
 
@@ -40,7 +42,7 @@ python3 server.py --demo        # then open http://127.0.0.1:8765/
 python3 server.py --port 9000
 ```
 
-Keyboard: `<-`/`->` change screen, `Space` pause, `V` next video source, `R` refresh, `F` fullscreen.
+Keyboard: `<-`/`->` change screen, `Space` pause, `M` mute/unmute reels, `R` refresh, `F` fullscreen.
 
 ## Configuration
 Settings live in `config.json` (favourite team, screen durations, video channels and sources, news feeds).
@@ -51,13 +53,14 @@ Optional overrides go in a `.env` file (copy `.env.example`); real environment v
 | `favourite` / `NHL_HUB_FAVOURITE` | config / env | Team highlighted everywhere |
 | `port` / `NHL_HUB_PORT` | config / env | Local server port |
 | `scene_seconds` | config | Seconds per screen type |
-| `video_channels`, `video_max_age_hours` | config | YouTube channels and age limit for the video panel |
+| `reel_seconds`, `reel_muted` | config | seconds per goal clip; start muted |
+| `prospect_notes.json` | file | optional `{playerId: {rank, grade, note}}` shown on prospect cards (see `prospect_notes.example.json`) |
 | `news_feeds` | config | List of `{ "name", "url" }` RSS feeds (defaults built in) |
 | `goal_player_url`, `reel_seconds`, `reel_fit` | config | Goal reel player fallback, timing, `cover`/`contain` |
 
 ## Data sources and security
 There are no API keys or credentials in this project; everything comes from public endpoints (NHL web and
-stats APIs, public RSS feeds, YouTube channel RSS, ESPN's public transactions feed, NHL's Brightcove clips).
+stats APIs, public RSS feeds, ESPN's public transactions feed, NHL's Brightcove clips).
 The server binds to `127.0.0.1` only. See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) for every outbound call
 and the local endpoints. This app does not receive webhooks.
 
@@ -77,4 +80,4 @@ loaded at runtime from the NHL's public asset URLs and remain the property of th
 provider's terms before any public or commercial use.
 
 ## Licence
-MIT, see [LICENSE](LICENSE).
+Add a licence file before publishing (e.g. MIT) and state it here.

@@ -12,13 +12,13 @@ Line numbers refer to `server.py` for v1.0.0-beta unless a file is named.
 | League leaders | `_lead()` 302-310, `leaders()` 311-322 | `/skater-stats-leaders/current`, `/goalie-stats-leaders/current` |
 | Game previews | `team_stats()` 382-397, `preview()` 398-458 | `https://api.nhle.com/stats/rest/en/team/summary` and `/percentages` (URL line 380), `/gamecenter/{id}/landing` |
 | News | `NEWS_FEEDS` 236, `_parse_feed()` 254-285, `news()` 286-301 | Sportsnet, The Hockey News, Habs Eyes on the Prize, ESPN RSS (overridable via `news_feeds` in config.json) |
-| Videos (last 24h) | `videos()` 323-351 | `https://www.youtube.com/feeds/videos.xml?channel_id=...` |
+| Team profile | `team_profile()` in `server.py` | `api-web.nhle.com/v1/club-stats/{abbr}/now`, `api.nhle.com/stats/rest/en/team/summary`, standings |
+| Prospects | `prospects()` in `server.py` | `api-web.nhle.com/v1/prospects/{abbr}`, `/v1/player/{id}/landing`, local `prospect_notes.json` |
 | Goal clips | `clip()` 352-379 | `https://players.brightcove.net/{acct}/default_default/config.json` (public player key), `https://edge.api.brightcove.com/playback/v1/accounts/{acct}/videos/{id}` |
 | Transactions | `transactions()` 459-476 | `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/transactions` |
-| Embed check | `embeddable()` 477-500 | only hosts listed in `config.json` `video_sources` (plus youtube.com) |
 
 Browser-side loads (not through the server): team logos and headshots from `assets.nhle.com` (URLs come from the
-API responses), Google Fonts (`web/index.html` lines 8-9), the YouTube embed and fallback Brightcove iframe
+API responses), Google Fonts (`web/index.html` lines 8-9), the fallback Brightcove iframe
 (`web/app.js` `initVideo()` 429-444, `playReel()` 401-428), and the MP4 clips themselves.
 
 Polling (front end, `web/app.js`): scores every 15 s (`pollScores` 445), standings every 120 s (`pollSlow` 469),
@@ -28,7 +28,7 @@ each source (`cached()` 38-54) and serves stale data if a source fails.
 ## Local endpoints exposed by the app
 Served on `127.0.0.1:<port>` only (`ThreadingHTTPServer`, line 602). All are read-only `GET`:
 `/api/config`, `/api/scores`, `/api/standings`, `/api/game/<id>`, `/api/club/<ABBR>`, `/api/leaders`,
-`/api/videos`, `/api/clip/<id>`, `/api/preview/<id>`, `/api/transactions`, `/api/news`, `/api/embed?url=`
+`/api/team/<abbr>`, `/api/prospects/<abbr>`, `/api/clip/<id>`, `/api/preview/<id>`, `/api/transactions`, `/api/news`
 (handler `api()` 555-594), plus static files from `web/`.
 
 ## Webhooks
@@ -55,3 +55,7 @@ Testing locally with ngrok: `python3 server.py` then `ngrok http 8765`; use the 
 as the provider's webhook URL, and watch requests at http://127.0.0.1:4040. Note that ngrok would make the
 **whole dashboard** reachable from the internet, so only run it while testing and keep the verification above.
 (Stripe: use `stripe listen --forward-to localhost:8765/webhooks/stripe`; Twilio: set the number's webhook to the ngrok URL and validate `X-Twilio-Signature`.)
+
+
+Note: line ranges in this file predate v1.1.0 and have shifted; search by function name.
+Elite Prospects is intentionally not used: its terms prohibit scraping and personal/consumer use.

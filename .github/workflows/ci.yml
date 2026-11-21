@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Checks (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Set up Node 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Python compiles
+        run: python -m py_compile server.py demo.py
+      - name: Front-end JavaScript parses
+        run: node --check web/app.js
+      - name: Shell scripts parse
+        run: bash -n install.sh && bash -n nhl-hub
+      - name: JSON files are valid
+        run: |
+          for f in config.json prospect_rankings.json prospect_notes.example.json; do
+            python -c "import json,sys; json.load(open(sys.argv[1]))" "$f" && echo "ok $f"
+          done
+      - name: Version file looks like semver
+        run: grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' VERSION
+      - name: Smoke test the demo server (no internet needed)
+        run: |
+          python server.py --demo --port 18765 > server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID' EXIT
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:18765/ >/dev/null && break; sleep 1; done
+          curl -fs http://127.0.0.1:18765/ | grep -qi "<html"
+          for ep in config scores standings transactions news; do
+            curl -fs "http://127.0.0.1:18765/api/$ep" | python -c "import json,sys; json.load(sys.stdin); print('ok /api/$ep')"
+          done
+          cat server.log
