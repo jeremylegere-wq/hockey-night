@@ -4,6 +4,9 @@ A full-screen, 16:9 NHL dashboard for a spare screen or TV. It cycles through li
 scores, division and wild-card standings, league leaders, game previews and league transactions, with a
 scrolling ticker for news, goals and scores, plus a video panel and story-style goal reels.
 
+
+![Hockey Night standings screen in demo mode](docs/images/standings.png)
+
 > Status: **v1.0.0-beta**. Built and tested against sample data; live-data behaviour is still being verified.
 > See [CHANGELOG.md](CHANGELOG.md).
 
